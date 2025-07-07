@@ -5,6 +5,7 @@ import android.app.Service;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -33,6 +34,12 @@ public class BubbleHeadService extends Service implements View.OnClickListener {
 
     private int x_init_cord, y_init_cord, x_init_margin, y_init_margin;
     static Bitmap _image;
+    
+    // SharedPreferences keys for saving position
+    private static final String PREF_NAME = "BubbleHeadPrefs";
+    private static final String KEY_POSITION_X = "bubble_position_x";
+    private static final String KEY_POSITION_Y = "bubble_position_y";
+    private static final String KEY_POSITION_SAVED = "bubble_position_saved";
 
     // Set the value for showing close button to true or false
     public static void shouldShowCloseButton(Boolean show) {
@@ -81,6 +88,31 @@ public class BubbleHeadService extends Service implements View.OnClickListener {
     @Override
     public IBinder onBind(Intent intent) {
         return null;
+    }
+
+    // Save bubble position to SharedPreferences
+    private void saveBubblePosition(int x, int y) {
+        SharedPreferences prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        SharedPreferences.Editor editor = prefs.edit();
+        editor.putInt(KEY_POSITION_X, x);
+        editor.putInt(KEY_POSITION_Y, y);
+        editor.putBoolean(KEY_POSITION_SAVED, true);
+        editor.apply();
+    }
+
+    // Load bubble position from SharedPreferences
+    private int[] loadBubblePosition() {
+        SharedPreferences prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        boolean positionSaved = prefs.getBoolean(KEY_POSITION_SAVED, false);
+        
+        if (positionSaved) {
+            int x = prefs.getInt(KEY_POSITION_X, 0);
+            int y = prefs.getInt(KEY_POSITION_Y, 100);
+            return new int[]{x, y};
+        } else {
+            // Return default position if no saved position exists
+            return new int[]{0, 100};
+        }
     }
 
     @SuppressLint({"ClickableViewAccessibility", "InflateParams"})
@@ -149,9 +181,10 @@ public class BubbleHeadService extends Service implements View.OnClickListener {
         // Specify the view position
         params.gravity = Gravity.TOP | Gravity.LEFT;
 
-        // Initially view will be added to top-left corner, you change x-y coordinates according to your need
-        params.x = 0;
-        params.y = 100;
+        // Load saved position or use default
+        int[] savedPosition = loadBubblePosition();
+        params.x = savedPosition[0];
+        params.y = savedPosition[1];
 
         // Add the view to the window
         mWindowManager.addView(mFloatingWidgetView, params);
@@ -235,6 +268,8 @@ public class BubbleHeadService extends Service implements View.OnClickListener {
                         // If user drag and drop the floating widget view
                         // into remove view then stop the service
                         if (inBounded) {
+                            // Clear saved position when bubble is removed by dragging
+                            clearSavedPosition();
                             stopSelf();
                             inBounded = false;
                             break;
@@ -265,6 +300,9 @@ public class BubbleHeadService extends Service implements View.OnClickListener {
                         layoutParams.y = y_cord_Destination;
 
                         inBounded = false;
+
+                        // Save the final position after drag ends
+                        saveBubblePosition(layoutParams.x, layoutParams.y);
 
                         // reset position
                         resetPosition(x_cord);
@@ -329,8 +367,20 @@ public class BubbleHeadService extends Service implements View.OnClickListener {
     public void onClick(View v) {
         int id = v.getId();
         if (id == R.id.close_bubble_head) {
+            // Clear saved position when bubble is closed
+            clearSavedPosition();
             stopSelf();
         }
+    }
+
+    // Clear saved position from SharedPreferences
+    private void clearSavedPosition() {
+        SharedPreferences prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        SharedPreferences.Editor editor = prefs.edit();
+        editor.remove(KEY_POSITION_X);
+        editor.remove(KEY_POSITION_Y);
+        editor.remove(KEY_POSITION_SAVED);
+        editor.apply();
     }
 
     private void onFloatingWidgetLongClick() {
@@ -376,6 +426,8 @@ public class BubbleHeadService extends Service implements View.OnClickListener {
             public void onFinish() {
                 mParams.x = 0;
                 mWindowManager.updateViewLayout(mFloatingWidgetView, mParams);
+                // Save position after snapping to left
+                saveBubblePosition(0, mParams.y);
             }
         }.start();
     }
@@ -396,6 +448,8 @@ public class BubbleHeadService extends Service implements View.OnClickListener {
             public void onFinish() {
                 mParams.x = szWindow.x - mFloatingWidgetView.getWidth();
                 mWindowManager.updateViewLayout(mFloatingWidgetView, mParams);
+                // Save position after snapping to right
+                saveBubblePosition(szWindow.x - mFloatingWidgetView.getWidth(), mParams.y);
             }
         }.start();
     }
@@ -419,6 +473,8 @@ public class BubbleHeadService extends Service implements View.OnClickListener {
             if (layoutParams.y + (mFloatingWidgetView.getHeight() + getStatusBarHeight()) > szWindow.y) {
                 layoutParams.y = szWindow.y - (mFloatingWidgetView.getHeight() + getStatusBarHeight());
                 mWindowManager.updateViewLayout(mFloatingWidgetView, layoutParams);
+                // Save position after orientation change adjustment
+                saveBubblePosition(layoutParams.x, layoutParams.y);
             }
 
             if (layoutParams.x != 0 && layoutParams.x < szWindow.x) {
@@ -433,6 +489,8 @@ public class BubbleHeadService extends Service implements View.OnClickListener {
 
     private void onFloatingWidgetClick() {
         _continueToSnap = false;
+        // Clear saved position when bubble is clicked to bring app to foreground
+        clearSavedPosition();
         // bring the application to front
         Intent it = new Intent("intent.bring.app.to.foreground");
         it.setComponent(new ComponentName(getPackageName(), getApplicationContext().getPackageName() + ".MainActivity"));

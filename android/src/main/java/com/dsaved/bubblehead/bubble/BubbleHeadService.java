@@ -2,7 +2,6 @@ package com.dsaved.bubblehead.bubble;
 
 import android.annotation.SuppressLint;
 import android.app.Service;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -491,11 +490,18 @@ public class BubbleHeadService extends Service implements View.OnClickListener {
         _continueToSnap = false;
         // Clear saved position when bubble is clicked to bring app to foreground
         clearSavedPosition();
-        // bring the application to front
-        Intent it = new Intent("intent.bring.app.to.foreground");
-        it.setComponent(new ComponentName(getPackageName(), getApplicationContext().getPackageName() + ".MainActivity"));
-        it.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        getApplicationContext().startActivity(it);
+        // Bring the application to front via the launcher activity. Looking up
+        // the launch intent by package is robust to host apps where the
+        // applicationId differs from the MainActivity's Java package (e.g.
+        // build flavors with distinct applicationIds sharing one namespace).
+        Context ctx = getApplicationContext();
+        Intent it = ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName());
+        if (it != null) {
+            it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                    | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            ctx.startActivity(it);
+        }
 
         // stop the service
         stopSelf();

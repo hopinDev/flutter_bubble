@@ -33,6 +33,12 @@ public class BubbleHeadService extends Service implements View.OnClickListener {
 
     private int x_init_cord, y_init_cord, x_init_margin, y_init_margin;
     static Bitmap _image;
+
+    // Tracks the active snap animation so it can be cancelled when the
+    // service stops; otherwise onFinish() can fire after the view has
+    // been removed from the WindowManager and crash with
+    // IllegalArgumentException: View not attached to window manager.
+    private CountDownTimer snapTimer;
     
     // SharedPreferences keys for saving position
     private static final String PREF_NAME = "BubbleHeadPrefs";
@@ -409,8 +415,9 @@ public class BubbleHeadService extends Service implements View.OnClickListener {
     }
 
     private void snapToLeft(final int current_x_cord) {
+        cancelSnapTimer();
         final int x = szWindow.x - current_x_cord;
-        new CountDownTimer(500, 5) {
+        snapTimer = new CountDownTimer(500, 5) {
             final WindowManager.LayoutParams mParams = (WindowManager.LayoutParams) mFloatingWidgetView.getLayoutParams();
 
             public void onTick(long t) {
@@ -419,20 +426,22 @@ public class BubbleHeadService extends Service implements View.OnClickListener {
                 if (_bounce) {
                     mParams.x = -(int) (double) bounceValue(step, x);
                 }
-                mWindowManager.updateViewLayout(mFloatingWidgetView, mParams);
+                safeUpdateLayout(mFloatingWidgetView, mParams);
             }
 
             public void onFinish() {
                 mParams.x = 0;
-                mWindowManager.updateViewLayout(mFloatingWidgetView, mParams);
+                safeUpdateLayout(mFloatingWidgetView, mParams);
                 // Save position after snapping to left
                 saveBubblePosition(0, mParams.y);
             }
-        }.start();
+        };
+        snapTimer.start();
     }
 
     private void snapToRight(final int current_x_cord) {
-        new CountDownTimer(500, 5) {
+        cancelSnapTimer();
+        snapTimer = new CountDownTimer(500, 5) {
             final WindowManager.LayoutParams mParams = (WindowManager.LayoutParams) mFloatingWidgetView.getLayoutParams();
 
             public void onTick(long t) {
@@ -441,16 +450,37 @@ public class BubbleHeadService extends Service implements View.OnClickListener {
                 if (_bounce) {
                     mParams.x = szWindow.x + (int) (double) bounceValue(step, current_x_cord) - mFloatingWidgetView.getWidth();
                 }
-                mWindowManager.updateViewLayout(mFloatingWidgetView, mParams);
+                safeUpdateLayout(mFloatingWidgetView, mParams);
             }
 
             public void onFinish() {
                 mParams.x = szWindow.x - mFloatingWidgetView.getWidth();
-                mWindowManager.updateViewLayout(mFloatingWidgetView, mParams);
+                safeUpdateLayout(mFloatingWidgetView, mParams);
                 // Save position after snapping to right
                 saveBubblePosition(szWindow.x - mFloatingWidgetView.getWidth(), mParams.y);
             }
-        }.start();
+        };
+        snapTimer.start();
+    }
+
+    private void cancelSnapTimer() {
+        if (snapTimer != null) {
+            snapTimer.cancel();
+            snapTimer = null;
+        }
+    }
+
+    // Guards updateViewLayout against the view being detached (e.g. when
+    // the service was destroyed mid-animation). Without this guard the
+    // WindowManager throws IllegalArgumentException.
+    private void safeUpdateLayout(View view, WindowManager.LayoutParams params) {
+        if (mWindowManager == null || view == null || !view.isAttachedToWindow()) {
+            return;
+        }
+        try {
+            mWindowManager.updateViewLayout(view, params);
+        } catch (IllegalArgumentException ignored) {
+        }
     }
 
     private double bounceValue(long step, long scale) {
@@ -510,11 +540,18 @@ public class BubbleHeadService extends Service implements View.OnClickListener {
     @Override
     public void onDestroy() {
         super.onDestroy();
+        cancelSnapTimer();
         if (mFloatingWidgetView != null) {
-            mWindowManager.removeView(mFloatingWidgetView);
+            try {
+                mWindowManager.removeView(mFloatingWidgetView);
+            } catch (IllegalArgumentException ignored) {
+            }
         }
         if (removeFloatingWidgetView != null) {
-            mWindowManager.removeView(removeFloatingWidgetView);
+            try {
+                mWindowManager.removeView(removeFloatingWidgetView);
+            } catch (IllegalArgumentException ignored) {
+            }
         }
     }
 }

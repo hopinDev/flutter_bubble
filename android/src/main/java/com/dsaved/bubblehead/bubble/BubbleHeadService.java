@@ -537,6 +537,17 @@ public class BubbleHeadService extends Service implements View.OnClickListener {
         stopSelf();
     }
 
+    // Return START_NOT_STICKY so the system does not recreate the service
+    // after the process is killed (e.g. when the app is swiped from
+    // recents). The default START_STICKY would resurrect the service,
+    // re-running onCreate() and re-adding the overlay, so the bubble would
+    // reappear even though the app was killed.
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        super.onStartCommand(intent, flags, startId);
+        return START_NOT_STICKY;
+    }
+
     // Called when the user swipes the host app away from the recent-apps
     // list. Without this the overlay survives the app being killed, leaving
     // an orphaned bubble on screen. Stopping the service tears it down.

@@ -537,6 +537,16 @@ public class BubbleHeadService extends Service implements View.OnClickListener {
         stopSelf();
     }
 
+    // Called when the user swipes the host app away from the recent-apps
+    // list. Without this the overlay survives the app being killed, leaving
+    // an orphaned bubble on screen. Stopping the service tears it down.
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        super.onTaskRemoved(rootIntent);
+        clearSavedPosition();
+        stopSelf();
+    }
+
     @Override
     public void onDestroy() {
         super.onDestroy();
